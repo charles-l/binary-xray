@@ -5,15 +5,19 @@ const c = @cImport({
     @cInclude("drmgr.h");
 });
 
+const shm = @import("shm.zig");
+
 const bfd = @cImport({
     @cInclude("bfd.h");
 });
 
 const assert = std.debug.assert;
 
-export fn trace_bb(addr_ptr: u64) void {
-    const i = bb_addr_count.get(addr_ptr).?;
-    bb_addr_count.put(addr_ptr, i + 1) catch unreachable;
+export fn trace_bb(addr: u64) void {
+    const i = bb_addr_count.get(addr).?;
+    bb_addr_count.put(addr, i + 1) catch unreachable;
+
+    shm_queue_ptr.add(addr);
 }
 
 export fn event_app_instruction(dr_context: ?*anyopaque, tag: ?*anyopaque, bb: ?*c.instrlist_t, inst: ?*c.instr_t, for_trace: u8, translating: u8, user_data: ?*anyopaque) c.dr_emit_flags_t {
@@ -49,7 +53,7 @@ export fn event_app_instruction(dr_context: ?*anyopaque, tag: ?*anyopaque, bb: ?
             assert(std.mem.eql(u32, old, lines.items));
             lines.deinit();
         } else {
-            bb_addr_line_map.put(@ptrToInt(first_pc), lines.toOwnedSlice()) catch @panic("couldn't add addrs");
+            bb_addr_line_map.put(@ptrToInt(first_pc), lines.toOwnedSlice() catch @panic("ded")) catch @panic("couldn't add addrs");
             bb_addr_count.put(@ptrToInt(first_pc), 0) catch @panic("couldn't add addr");
         }
     }
@@ -57,11 +61,15 @@ export fn event_app_instruction(dr_context: ?*anyopaque, tag: ?*anyopaque, bb: ?
     return c.DR_EMIT_DEFAULT;
 }
 
+var shm_queue_ptr: *shm.queue = undefined;
+
 export fn event_exit() void {
     var it = bb_addr_count.iterator();
     while (it.next()) |kv| {
         std.debug.print("bb 0x{x} hit {} times, lines {any}\n", .{ kv.key_ptr.*, kv.value_ptr.*, bb_addr_line_map.get(kv.key_ptr.*).? });
     }
+
+    shm.deinit_queue(shm_queue_ptr);
 }
 
 var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
@@ -73,10 +81,12 @@ var bb_addr_count = std.AutoHashMap(u64, u32).init(gpa);
 
 extern fn hack_bfd_asymbol_value(sy: [*c]const bfd.asymbol) bfd.bfd_vma;
 
-export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*][*]const u8) void {
+export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*c][*c]const u8) void {
     _ = id;
     _ = argc;
     _ = argv;
+
+    shm_queue_ptr = shm.init_queue(true) catch @panic("failed to init queue");
     {
         const r = c.drmgr_init();
         assert(r != 0);
@@ -86,6 +96,7 @@ export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*][*]const u8) voi
         const r1 = bfd.bfd_init();
         assert(r1 != 0);
 
+        // TODO: look into using drsym_enumerate_lines and dropping libbfd
         const abfd = bfd.bfd_openr("/home/nc/projects/blobby/physics/physics.bin", null);
         assert(abfd != null);
 
