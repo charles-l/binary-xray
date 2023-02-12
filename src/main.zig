@@ -11,47 +11,65 @@ const bfd = @cImport({
 
 const assert = std.debug.assert;
 
+export fn trace_bb(addr_ptr: u64) void {
+    const i = bb_addr_count.get(addr_ptr).?;
+    bb_addr_count.put(addr_ptr, i + 1) catch unreachable;
+}
+
 export fn event_app_instruction(dr_context: ?*anyopaque, tag: ?*anyopaque, bb: ?*c.instrlist_t, inst: ?*c.instr_t, for_trace: u8, translating: u8, user_data: ?*anyopaque) c.dr_emit_flags_t {
-    _ = inst;
     _ = for_trace;
     _ = translating;
     _ = user_data;
-    _ = dr_context;
     _ = tag;
 
+    if (c.drmgr_is_first_instr(dr_context, inst) == 0) {
+        return c.DR_EMIT_DEFAULT;
+    }
+
     var instr = c.instrlist_first_app(bb);
+    var first_pc = c.instr_get_app_pc(instr);
+    var lines = std.ArrayList(u32).init(gpa);
     while (instr != null) : (instr = c.instr_get_next_app(instr)) {
         var pc = c.instr_get_app_pc(instr);
         assert(pc != null);
-        //if (@ptrToInt(pc) < 0x417bf0 and @ptrToInt(pc) > 0x416a8f) {
-        if (addrlinemap.contains(@ptrToInt(pc))) {
-            const lineno = addrlinemap.get(@ptrToInt(pc)) orelse 0;
-            const i = linehitmap.get(lineno).?;
-            linehitmap.put(lineno, i + 1) catch @panic("ded");
+        if (instr_line_map.contains(@ptrToInt(pc))) {
+            const lineno = instr_line_map.get(@ptrToInt(pc)) orelse 0;
+            if (std.mem.indexOfScalar(u32, lines.items, lineno) == null) {
+                lines.append(lineno) catch @panic("blah");
+            }
         }
-        //std.debug.print("line: {any}\n", .{addrlinemap.get(@ptrToInt(pc))});
-        //}
     }
 
-    //c.instrlist_disassemble(dr_context, @ptrCast([*c]u8, tag), bb, 0);
+    if (lines.items.len > 0) {
+        std.debug.print("tracking bb 0x{x} which executes lines {any}\n", .{ @ptrToInt(first_pc), lines.items });
+
+        c.dr_insert_clean_call(dr_context, bb, c.instrlist_first(bb), @intToPtr(*anyopaque, @ptrToInt(&trace_bb)), 0, 1, c.OPND_CREATE_INT64(first_pc));
+        if (bb_addr_line_map.get(@ptrToInt(first_pc))) |old| {
+            // check for unexpected duplicated bb
+            assert(std.mem.eql(u32, old, lines.items));
+            lines.deinit();
+        } else {
+            bb_addr_line_map.put(@ptrToInt(first_pc), lines.toOwnedSlice()) catch @panic("couldn't add addrs");
+            bb_addr_count.put(@ptrToInt(first_pc), 0) catch @panic("couldn't add addr");
+        }
+    }
 
     return c.DR_EMIT_DEFAULT;
 }
 
 export fn event_exit() void {
-    //std.debug.print("{*}\n", .{pc});
-
-    var it = linehitmap.iterator();
+    var it = bb_addr_count.iterator();
     while (it.next()) |kv| {
-        std.debug.print("line {} hit {} times\n", .{ kv.key_ptr.*, kv.value_ptr.* });
+        std.debug.print("bb 0x{x} hit {} times, lines {any}\n", .{ kv.key_ptr.*, kv.value_ptr.*, bb_addr_line_map.get(kv.key_ptr.*).? });
     }
 }
 
 var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};
 const gpa = general_purpose_allocator.allocator();
 
-var linehitmap = std.AutoHashMap(u32, u64).init(gpa);
-var addrlinemap = std.AutoHashMap(u64, u32).init(gpa);
+var instr_line_map = std.AutoHashMap(u64, u32).init(gpa);
+var bb_addr_line_map = std.AutoHashMap(u64, []u32).init(gpa);
+var bb_addr_count = std.AutoHashMap(u64, u32).init(gpa);
 
 extern fn hack_bfd_asymbol_value(sy: [*c]const bfd.asymbol) bfd.bfd_vma;
 
@@ -68,9 +86,6 @@ export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*][*]const u8) voi
         const r1 = bfd.bfd_init();
         assert(r1 != 0);
 
-        //const r2 = bfd.bfd_set_default_target("x86_64-pc-linux-gnu");
-        //assert(r2);
-
         const abfd = bfd.bfd_openr("/home/nc/projects/blobby/physics/physics.bin", null);
         assert(abfd != null);
 
@@ -78,7 +93,7 @@ export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*][*]const u8) voi
         const r2 = bfd.bfd_check_format(abfd, object);
         assert(r2);
 
-        const bfd_target = bfd.bfd_find_target("x86_64-pc-linux-gnu", abfd);
+        const bfd_target = bfd.bfd_find_target(null, abfd);
         assert(bfd_target != null);
         const upper_bound_bytes = bfd_target.*._bfd_get_symtab_upper_bound.?(abfd);
 
@@ -102,11 +117,16 @@ export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*][*]const u8) voi
         var filename: [*c]u8 = undefined;
         var functionname: [*c]const u8 = target_function;
         var lineno: u32 = undefined;
-        const r3 = bfd_target.*._bfd_find_line.?(abfd, &symbols[0], symbol, &filename, &lineno);
-        var i: u64 = 0;
-        assert(r3);
+
+        { // find starting line
+            const r3 = bfd_target.*._bfd_find_line.?(abfd, &symbols[0], symbol, &filename, &lineno);
+            assert(r3);
+        }
+
         var vm_offset = hack_bfd_asymbol_value(symbol.?);
         var dcontext = c.GLOBAL_DCONTEXT;
+
+        var i: u64 = 0;
         while (std.mem.eql(u8, target_function, functionname[0..std.mem.len(functionname)])) : (i += @intCast(u64, c.decode_sizeof(dcontext, vm_offset + i, null, null))) {
             const r4 = bfd_target.*._bfd_find_nearest_line.?(
                 abfd,
@@ -120,15 +140,9 @@ export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*][*]const u8) voi
             );
             assert(r4);
             if (lineno != 0) {
-                std.debug.print("{x}\n", .{vm_offset + i});
-                addrlinemap.put(vm_offset + i, lineno) catch @panic("can't add addr key");
+                instr_line_map.put(vm_offset + i, lineno) catch @panic("can't add addr key");
             }
         }
-        var it = addrlinemap.iterator();
-        while (it.next()) |kv| {
-            linehitmap.put(kv.value_ptr.*, 0) catch @panic("can't add lineno key");
-        }
-        linehitmap.put(0, 0) catch unreachable; // for lines that don't appear
     }
 
     if (c.drmgr_register_bb_instrumentation_event(null, event_app_instruction, null) == 0) {
