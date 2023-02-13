@@ -45,6 +45,9 @@ export fn event_app_instruction(dr_context: ?*anyopaque, tag: ?*anyopaque, bb: ?
     }
 
     if (lines.items.len > 0) {
+        for (lines.items) |line| {
+            shm_queue_ptr.line_pairs.append(.{ .addr = @ptrToInt(first_pc), .line = line }) catch @panic("too many lines, increase Queue.max_lines");
+        }
         std.debug.print("tracking bb 0x{x} which executes lines {any}\n", .{ @ptrToInt(first_pc), lines.items });
 
         c.dr_insert_clean_call(dr_context, bb, c.instrlist_first(bb), @intToPtr(*anyopaque, @ptrToInt(&trace_bb)), 0, 1, c.OPND_CREATE_INT64(first_pc));
@@ -61,7 +64,7 @@ export fn event_app_instruction(dr_context: ?*anyopaque, tag: ?*anyopaque, bb: ?
     return c.DR_EMIT_DEFAULT;
 }
 
-var shm_queue_ptr: *shm.queue = undefined;
+var shm_queue_ptr: *shm.Queue = undefined;
 
 export fn event_exit() void {
     var it = bb_addr_count.iterator();
@@ -69,7 +72,7 @@ export fn event_exit() void {
         std.debug.print("bb 0x{x} hit {} times, lines {any}\n", .{ kv.key_ptr.*, kv.value_ptr.*, bb_addr_line_map.get(kv.key_ptr.*).? });
     }
 
-    shm.deinit_queue(shm_queue_ptr);
+    shm.deinit_queue(shm_queue_ptr, true);
 }
 
 var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{}){};

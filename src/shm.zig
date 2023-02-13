@@ -8,8 +8,16 @@ const c = @cImport({
 
 const std = @import("std");
 
-pub const queue = struct {
+pub const Queue = struct {
+    const AddrLinePair = struct {
+        addr: u64,
+        line: u32,
+    };
     const capacity = 2048;
+    const max_lines = 4096;
+
+    running: bool,
+    line_pairs: std.BoundedArray(AddrLinePair, max_lines),
 
     //https://www.bo-yang.net/2016/07/27/shared-memory-ring-buffer
     //lock: c.pthread_mutex_t,
@@ -29,28 +37,31 @@ pub const queue = struct {
     }
 };
 
-pub fn init_queue(write: bool) !*queue {
-    var fd = c.shm_open("/covring", (if (write) c.O_RDWR else c.O_RDONLY) | c.O_CREAT, c.S_IRUSR | c.S_IWUSR);
+pub fn init_queue(write: bool) !*Queue {
+    var open_flags = if (write) c.O_RDWR | c.O_CREAT | c.O_EXCL else c.O_RDONLY;
+    var mmap_mode = if (write) c.PROT_WRITE | c.PROT_READ else c.PROT_READ;
+
+    var fd = c.shm_open("/covring", open_flags, c.S_IRUSR | c.S_IWUSR);
     if (fd == -1) {
         return error.FailedToOpenSHM;
     }
 
-    var mmap_mode = c.PROT_READ;
     if (write) {
-        if (c.ftruncate(fd, @sizeOf(queue)) == -1) {
+        if (c.ftruncate(fd, @sizeOf(Queue)) == -1) {
             return error.FailedToFtruncate;
         }
-        mmap_mode |= c.PROT_WRITE;
     }
 
-    var ptr = @ptrCast(*queue, @alignCast(8, c.mmap(null, @sizeOf(queue), mmap_mode, c.MAP_SHARED, fd, 0)));
+    var ptr = @ptrCast(*Queue, @alignCast(8, c.mmap(null, @sizeOf(Queue), mmap_mode, c.MAP_SHARED, fd, 0)));
     if (ptr == c.MAP_FAILED) {
         return error.FailedToMMAP;
     }
     return ptr;
 }
 
-pub fn deinit_queue(queue_ptr: *queue) void {
-    _ = c.munmap(queue_ptr, @sizeOf(queue));
-    _ = c.shm_unlink("/covring");
+pub fn deinit_queue(queue_ptr: *Queue, delete: bool) void {
+    _ = c.munmap(queue_ptr, @sizeOf(Queue));
+    if (delete) {
+        _ = c.shm_unlink("/covring");
+    }
 }
