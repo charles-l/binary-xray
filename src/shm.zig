@@ -16,30 +16,43 @@ pub const Queue = struct {
     const capacity = 2048;
     const max_lines = 4096;
 
-    running: bool,
     line_pairs: std.BoundedArray(AddrLinePair, max_lines),
 
-    //https://www.bo-yang.net/2016/07/27/shared-memory-ring-buffer
+    // https://www.bo-yang.net/2016/07/27/shared-memory-ring-buffer
     //lock: c.pthread_mutex_t,
     //begin: usize,
 
-    end: usize,
+    end: std.atomic.Atomic(usize),
+    read: std.atomic.Atomic(usize),
 
     bb_queue: [capacity]u64,
 
-    pub fn add(self: *@This(), addr: u64) void {
-        self.bb_queue[self.end] = addr;
-        self.end = (self.end + 1) % self.bb_queue.len;
-        //if (self.end == self.begin) {
-        //    std.debug.print("queue overran begin\n", .{});
-        //    self.begin = (self.begin + 1) % self.bb_queue.len;
-        //}
+    pub fn add(self: *@This(), addr: u64) !void {
+        const e = self.end.load(.SeqCst);
+        self.bb_queue[e] = addr;
+        self.end.store((e + 1) % self.bb_queue.len, .SeqCst);
+
+        if (self.end.load(.SeqCst) == self.read.load(.SeqCst)) {
+            return error.OverranRead;
+        }
+    }
+
+    pub fn readNext(self: *@This()) ?u64 {
+        const r = self.read.load(.SeqCst);
+        const next = (r + 1) % self.bb_queue.len;
+
+        if (next == self.end.load(.SeqCst)) {
+            return null;
+        } else {
+            self.read.store(next, .SeqCst);
+            return self.bb_queue[next];
+        }
     }
 };
 
 pub fn init_queue(write: bool) !*Queue {
-    var open_flags = if (write) c.O_RDWR | c.O_CREAT | c.O_EXCL else c.O_RDONLY;
-    var mmap_mode = if (write) c.PROT_WRITE | c.PROT_READ else c.PROT_READ;
+    var open_flags = if (write) c.O_RDWR | c.O_CREAT | c.O_EXCL else c.O_RDWR;
+    var mmap_mode = c.PROT_WRITE | c.PROT_READ;
 
     var fd = c.shm_open("/covring", open_flags, c.S_IRUSR | c.S_IWUSR);
     if (fd == -1) {
@@ -56,6 +69,7 @@ pub fn init_queue(write: bool) !*Queue {
     if (ptr == c.MAP_FAILED) {
         return error.FailedToMMAP;
     }
+
     return ptr;
 }
 

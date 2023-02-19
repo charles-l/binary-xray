@@ -17,7 +17,7 @@ export fn trace_bb(addr: u64) void {
     const i = bb_addr_count.get(addr).?;
     bb_addr_count.put(addr, i + 1) catch unreachable;
 
-    shm_queue_ptr.add(addr);
+    shm_queue_ptr.add(addr) catch std.debug.print("overran read ptr in queue\n", .{});
 }
 
 export fn event_app_instruction(dr_context: ?*anyopaque, tag: ?*anyopaque, bb: ?*c.instrlist_t, inst: ?*c.instr_t, for_trace: u8, translating: u8, user_data: ?*anyopaque) c.dr_emit_flags_t {

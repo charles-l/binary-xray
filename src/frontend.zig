@@ -72,8 +72,7 @@ pub fn main() !void {
     rl.SetTargetFPS(60);
 
     while (!rl.WindowShouldClose()) {
-        if (last_end != queue.end) {
-            var addr = queue.bb_queue[queue.end];
+        while (queue.readNext()) |addr| {
             if (!bb_line_map.contains(addr)) {
                 // HACK: rebuilding this table as needed
                 try rebuild_bb_line_map(queue, &bb_line_map);
