@@ -93,7 +93,7 @@ pub fn main() !void {
                 for (lines.items) |line| {
                     brightness[line - 1] = 255;
                 }
-                std.debug.print("bb: 0x{x} -> {any}\n", .{ addr, lines.items });
+                //std.debug.print("bb: 0x{x} -> {any}\n", .{ addr, lines.items });
             } else {
                 std.debug.print("bb: 0x{x} -> UNKNOWN\n", .{addr});
             }
@@ -113,7 +113,7 @@ pub fn main() !void {
 
         for (brightness) |*b, i| {
             if (b.* > 0) {
-                b.* -= 1;
+                b.* -= 5;
                 const chars = @intToFloat(f32, line_offsets[i + 1] - line_offsets[i]);
                 rl.DrawRectangle(
                     @floatToInt(i32, bx),
