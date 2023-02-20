@@ -2,6 +2,8 @@
 
 Peek inside a binary to see which lines are executing in realtime.
 
+Works on Linux with binaries built in debug mode.
+
 https://user-images.githubusercontent.com/1291012/220166020-2725b953-20f5-48e9-a0b6-cec334201072.mp4
 
 ### building
