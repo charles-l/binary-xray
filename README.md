@@ -2,6 +2,8 @@
 
 Peek inside a binary to see which lines are executing in realtime.
 
+https://user-images.githubusercontent.com/1291012/220166020-2725b953-20f5-48e9-a0b6-cec334201072.mp4
+
 ### building
 Install dependencies
 ```
@@ -18,7 +20,7 @@ make -j
 
 Build `bx`.
 ```
-git clone <this repo>
+git clone https://github.com/charles-l/binary-xray
 cd binary-xray
 zig build -Ddynamorio-build=/path/to/dynamorio/build/
 ```
