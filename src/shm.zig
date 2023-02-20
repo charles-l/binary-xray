@@ -71,10 +71,6 @@ pub fn init_queue(write: bool) !*Queue {
         return error.FailedToMMAP;
     }
 
-    if (write) {
-        ptr.filename = @TypeOf(ptr.filename).init(0) catch unreachable;
-    }
-
     return ptr;
 }
 

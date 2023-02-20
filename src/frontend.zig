@@ -38,7 +38,7 @@ pub fn main() !void {
     const window_width = 800;
     const window_height = 800;
 
-    rl.InitWindow(window_width, window_height, "covgui");
+    rl.InitWindow(window_width, window_height, "bxgui");
     rl.SetWindowState(rl.FLAG_WINDOW_RESIZABLE);
 
     var panel_scroll: rl.Vector2 = .{ .x = 0, .y = 0 };
@@ -95,7 +95,6 @@ pub fn main() !void {
                 for (lines.items) |line| {
                     brightness[line - 1] = 255;
                 }
-                //std.debug.print("bb: 0x{x} -> {any}\n", .{ addr, lines.items });
             } else {
                 std.debug.print("bb: 0x{x} -> UNKNOWN\n", .{addr});
             }

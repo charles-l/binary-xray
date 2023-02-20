@@ -46,6 +46,7 @@ export fn event_app_instruction(dr_context: ?*anyopaque, tag: ?*anyopaque, bb: ?
 
     if (lines.items.len > 0) {
         for (lines.items) |line| {
+            std.debug.print("0x{x} -> {}\n", .{ @ptrToInt(first_pc), line });
             shm_queue_ptr.line_pairs.append(.{ .addr = @ptrToInt(first_pc), .line = line }) catch @panic("too many lines, increase Queue.max_lines");
         }
         std.debug.print("tracking bb 0x{x} which executes lines {any}\n", .{ @ptrToInt(first_pc), lines.items });
@@ -95,7 +96,8 @@ export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*c][*c]const u8) v
     };
 
     if (argc != 2) {
-        @panic("need a function to instrument");
+        std.debug.print("error: need a function to instrument", .{});
+        c.dr_exit_process(1);
     }
 
     const target_function = std.mem.span(argv[1]);
@@ -105,6 +107,7 @@ export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*c][*c]const u8) v
         const r = c.drmgr_init();
         assert(r != 0);
     }
+    c.dr_register_exit_event(event_exit);
 
     {
         const r1 = bfd.bfd_init();
@@ -138,7 +141,9 @@ export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*c][*c]const u8) v
                     break :lbl s;
                 }
             }
-            @panic("Couldn't find symbol");
+            std.debug.print("error: Couldn't find symbol", .{});
+            c.dr_exit_process(1);
+            unreachable;
         };
 
         var filename: [*c]u8 = undefined;
@@ -147,7 +152,11 @@ export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*c][*c]const u8) v
 
         { // find starting line
             const r3 = bfd_target.*._bfd_find_line.?(abfd, &symbols[0], symbol, &filename, &lineno);
-            assert(r3);
+
+            if (!r3) {
+                std.debug.print("error: Couldn't find starting line for symbol. Did you build with debug symbols?\n", .{});
+                c.dr_exit_process(1);
+            }
         }
 
         shm_queue_ptr.filename = @TypeOf(shm_queue_ptr.filename).init(0) catch unreachable;
@@ -178,5 +187,4 @@ export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*c][*c]const u8) v
     if (c.drmgr_register_bb_instrumentation_event(null, event_app_instruction, null) == 0) {
         unreachable();
     }
-    c.dr_register_exit_event(event_exit);
 }
