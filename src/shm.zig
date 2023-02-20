@@ -16,6 +16,7 @@ pub const Queue = struct {
     const capacity = 2048;
     const max_lines = 4096;
 
+    filename: std.BoundedArray(u8, 512),
     line_pairs: std.BoundedArray(AddrLinePair, max_lines),
 
     // https://www.bo-yang.net/2016/07/27/shared-memory-ring-buffer
@@ -54,7 +55,7 @@ pub fn init_queue(write: bool) !*Queue {
     var open_flags = if (write) c.O_RDWR | c.O_CREAT | c.O_EXCL else c.O_RDWR;
     var mmap_mode = c.PROT_WRITE | c.PROT_READ;
 
-    var fd = c.shm_open("/covring", open_flags, c.S_IRUSR | c.S_IWUSR);
+    var fd = c.shm_open("/bxdata", open_flags, c.S_IRUSR | c.S_IWUSR);
     if (fd == -1) {
         return error.FailedToOpenSHM;
     }
@@ -70,12 +71,16 @@ pub fn init_queue(write: bool) !*Queue {
         return error.FailedToMMAP;
     }
 
+    if (write) {
+        ptr.filename = @TypeOf(ptr.filename).init(0) catch unreachable;
+    }
+
     return ptr;
 }
 
 pub fn deinit_queue(queue_ptr: *Queue, delete: bool) void {
     _ = c.munmap(queue_ptr, @sizeOf(Queue));
     if (delete) {
-        _ = c.shm_unlink("/covring");
+        _ = c.shm_unlink("/bxdata");
     }
 }

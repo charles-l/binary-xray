@@ -1,17 +1,32 @@
 const std = @import("std");
 
-pub fn build(b: *std.build.Builder) void {
+pub fn build(b: *std.build.Builder) !void {
     // Standard release options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const target = b.standardTargetOptions(.{});
     const build_mode = .Debug;
 
-    const lib = b.addSharedLibrary(.{ .name = "cov", .root_source_file = .{ .path = "src/covtool.zig" }, .target = target, .optimize = build_mode });
-    lib.addCSourceFile("hacks.c", &.{""});
+    if (b.args) |args| {
+        std.debug.print("{s}\n", .{args});
+    }
+
+    const dynamorio_buildpath = lbl: {
+        const o = b.option([]const u8, "dynamorio-build", "the path to your dynamorio build directory");
+        if (o == null) {
+            @panic("Need -Ddynamorio-build=/path/to/dynamorio/build. You can clone it from here: https://github.com/DynamoRIO/dynamorio");
+        }
+        break :lbl o.?;
+    };
+
+    const lib = b.addSharedLibrary(.{ .name = "bx", .root_source_file = .{ .path = "src/covtool.zig" }, .target = target, .optimize = build_mode });
     lib.addIncludePath("/usr/include");
-    lib.addIncludePath("/home/nc/src/dynamorio/build/include");
-    lib.addIncludePath("/home/nc/src/dynamorio/build/ext/include/");
-    lib.addLibraryPath("/home/nc/src/dynamorio/build/ext/lib64/release/");
+
+    lib.addIncludePath(try std.fs.path.join(b.allocator, &.{ dynamorio_buildpath, "include" }));
+    lib.addIncludePath(try std.fs.path.join(b.allocator, &.{ dynamorio_buildpath, "ext/include" }));
+    lib.addLibraryPath(try std.fs.path.join(b.allocator, &.{ dynamorio_buildpath, "ext/lib64/release" }));
+
+    lib.addCSourceFile("hacks.c", &.{""});
+
     lib.linkSystemLibrary("drmgr");
     lib.linkSystemLibrary("bfd");
     lib.linkLibC();
@@ -22,7 +37,7 @@ pub fn build(b: *std.build.Builder) void {
     lib.install();
 
     const frontend = b.addExecutable(.{
-        .name = "guicov",
+        .name = "bxgui",
         .root_source_file = .{ .path = "src/frontend.zig" },
         .target = target,
         .optimize = build_mode,

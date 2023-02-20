@@ -86,8 +86,19 @@ extern fn hack_bfd_asymbol_value(sy: [*c]const bfd.asymbol) bfd.bfd_vma;
 
 export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*c][*c]const u8) void {
     _ = id;
-    _ = argc;
-    _ = argv;
+
+    const app_path = lbl: {
+        var appargv: [3]c.dr_app_arg_t = undefined;
+        _ = c.dr_get_app_args(&appargv, appargv.len);
+        var buf: [64]u8 = undefined;
+        break :lbl c.dr_app_arg_as_cstring(&appargv[0], &buf, buf.len);
+    };
+
+    if (argc != 2) {
+        @panic("need a function to instrument");
+    }
+
+    const target_function = std.mem.span(argv[1]);
 
     shm_queue_ptr = shm.init_queue(true) catch @panic("failed to init queue");
     {
@@ -100,8 +111,10 @@ export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*c][*c]const u8) v
         assert(r1 != 0);
 
         // TODO: look into using drsym_enumerate_lines and dropping libbfd
-        const abfd = bfd.bfd_openr("/home/nc/projects/blobby/physics/physics.bin", null);
-        assert(abfd != null);
+        const abfd = bfd.bfd_openr(app_path, null);
+        if (abfd == null) {
+            std.debug.panic("failed to read symbols for {s}", .{app_path});
+        }
 
         const object = 1;
         const r2 = bfd.bfd_check_format(abfd, object);
@@ -117,7 +130,7 @@ export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*c][*c]const u8) v
 
         const symbols = @ptrCast([*c][*c]bfd.bfd_symbol, symbols_data)[0..@intCast(usize, sym_count)];
         std.debug.print("found {} symbols\n", .{sym_count});
-        const target_function = "main.convex_convex_intersection_gjk-770";
+
         var symbol = lbl: {
             for (symbols) |s| {
                 var name_slice = s.*.name[0..std.mem.len(s.*.name)];
@@ -136,6 +149,9 @@ export fn dr_client_main(id: c.client_id_t, argc: i32, argv: [*c][*c]const u8) v
             const r3 = bfd_target.*._bfd_find_line.?(abfd, &symbols[0], symbol, &filename, &lineno);
             assert(r3);
         }
+
+        shm_queue_ptr.filename = @TypeOf(shm_queue_ptr.filename).init(0) catch unreachable;
+        shm_queue_ptr.filename.appendSlice(std.mem.span(filename)) catch @panic("failed to load filename");
 
         var vm_offset = hack_bfd_asymbol_value(symbol.?);
         var dcontext = c.GLOBAL_DCONTEXT;

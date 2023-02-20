@@ -30,6 +30,8 @@ pub fn main() !void {
 
     var last_end = queue.end;
 
+    std.debug.print("filename::: {s}\n", .{queue.filename.slice()});
+
     var bb_line_map = std.AutoHashMap(u64, std.ArrayList(u32)).init(gpa);
     try rebuild_bb_line_map(queue, &bb_line_map);
 
@@ -42,7 +44,7 @@ pub fn main() !void {
     var panel_scroll: rl.Vector2 = .{ .x = 0, .y = 0 };
 
     const source_text = lbl: {
-        const file = try std.fs.openFileAbsolute("/home/nc/projects/blobby/physics/main.odin", .{ .mode = .read_only });
+        const file = try std.fs.openFileAbsolute(queue.filename.constSlice(), .{ .mode = .read_only });
         defer file.close();
 
         break :lbl try file.readToEndAllocOptions(gpa, 20000, null, 1, 0);
