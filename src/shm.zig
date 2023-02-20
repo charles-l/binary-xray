@@ -1,3 +1,4 @@
+/// Data that's placed in shared memory (uses shm_open/mmap).
 const c = @cImport({
     @cInclude("sys/mman.h");
     @cInclude("sys/stat.h");

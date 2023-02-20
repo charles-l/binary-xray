@@ -18,7 +18,7 @@ pub fn build(b: *std.build.Builder) !void {
         break :lbl o.?;
     };
 
-    const lib = b.addSharedLibrary(.{ .name = "bx", .root_source_file = .{ .path = "src/covtool.zig" }, .target = target, .optimize = build_mode });
+    const lib = b.addSharedLibrary(.{ .name = "bx", .root_source_file = .{ .path = "src/libbx.zig" }, .target = target, .optimize = build_mode });
     lib.addIncludePath("/usr/include");
 
     lib.addIncludePath(try std.fs.path.join(b.allocator, &.{ dynamorio_buildpath, "include" }));
@@ -36,30 +36,30 @@ pub fn build(b: *std.build.Builder) !void {
     lib.defineCMacro("_REENTRANT", "1");
     lib.install();
 
-    const frontend = b.addExecutable(.{
+    const gui = b.addExecutable(.{
         .name = "bxgui",
-        .root_source_file = .{ .path = "src/frontend.zig" },
+        .root_source_file = .{ .path = "src/gui.zig" },
         .target = target,
         .optimize = build_mode,
     });
-    frontend.linkLibC();
-    frontend.defineCMacro("PLATFORM_DESKTOP", "1");
-    frontend.addCSourceFile("raylib/src/rglfw.c", &.{"-fno-sanitize=undefined"});
-    frontend.addCSourceFile("raylib/src/rcore.c", &.{"-fno-sanitize=undefined"});
-    frontend.addCSourceFile("raylib/src/rshapes.c", &.{"-fno-sanitize=undefined"});
-    frontend.addCSourceFile("raylib/src/rtextures.c", &.{"-fno-sanitize=undefined"});
-    frontend.addCSourceFile("raylib/src/rtext.c", &.{"-fno-sanitize=undefined"});
-    frontend.addCSourceFile("raylib/src/rmodels.c", &.{"-fno-sanitize=undefined"});
-    frontend.addCSourceFile("raylib/src/utils.c", &.{"-fno-sanitize=undefined"});
-    frontend.addCSourceFile("raylib/src/raudio.c", &.{"-fno-sanitize=undefined"});
+    gui.linkLibC();
+    gui.defineCMacro("PLATFORM_DESKTOP", "1");
+    gui.addCSourceFile("raylib/src/rglfw.c", &.{"-fno-sanitize=undefined"});
+    gui.addCSourceFile("raylib/src/rcore.c", &.{"-fno-sanitize=undefined"});
+    gui.addCSourceFile("raylib/src/rshapes.c", &.{"-fno-sanitize=undefined"});
+    gui.addCSourceFile("raylib/src/rtextures.c", &.{"-fno-sanitize=undefined"});
+    gui.addCSourceFile("raylib/src/rtext.c", &.{"-fno-sanitize=undefined"});
+    gui.addCSourceFile("raylib/src/rmodels.c", &.{"-fno-sanitize=undefined"});
+    gui.addCSourceFile("raylib/src/utils.c", &.{"-fno-sanitize=undefined"});
+    gui.addCSourceFile("raylib/src/raudio.c", &.{"-fno-sanitize=undefined"});
     // zig does *not* like files named anything other than .c for addCSourceFile, copy the header file before adding it as a dep.
     std.fs.copyFileAbsolute(b.pathFromRoot("raygui/src/raygui.h"), b.pathFromRoot("raygui/src/raygui.c"), .{}) catch unreachable;
-    frontend.addCSourceFile("raygui/src/raygui.c", &.{ "-fno-sanitize=undefined", "-DRAYGUI_IMPLEMENTATION" });
-    frontend.addIncludePath("raylib/src");
-    frontend.addIncludePath("raylib/src/external/glfw/include");
-    frontend.addIncludePath("raygui/src");
-    frontend.linkSystemLibrary("pthread");
-    frontend.install();
+    gui.addCSourceFile("raygui/src/raygui.c", &.{ "-fno-sanitize=undefined", "-DRAYGUI_IMPLEMENTATION" });
+    gui.addIncludePath("raylib/src");
+    gui.addIncludePath("raylib/src/external/glfw/include");
+    gui.addIncludePath("raygui/src");
+    gui.linkSystemLibrary("pthread");
+    gui.install();
 
     const main_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/covtool.zig" },
